@@ -83,6 +83,7 @@ _DEFAULTS: dict = {
     # Generate Exam tab
     "exam_questions": [],
     "exam_title": "",
+    "generate_exam_requested": False,
     # Practice tab
     "practice_questions": [],
     "practice_idx": 0,
@@ -173,136 +174,12 @@ with tab_gen:
         "ready to download."
     )
 
-    left, right = st.columns([3, 2], gap="large")
-
-    # ── Left: topic selection ──────────────────────────────────────────────
-    with left:
-        st.subheader("Topics")
-
-        selected_topics: list[str] = []
-
-        for main_topic, subtopics in TOPICS.items():
-            with st.expander(f"**{main_topic}**", expanded=True):
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.button(
-                        "Select All",
-                        key=f"selall_{main_topic}",
-                        use_container_width=True,
-                    ):
-                        for i in range(len(subtopics)):
-                            st.session_state[f"st_{main_topic}_{i}"] = True
-                with c2:
-                    if st.button(
-                        "Clear",
-                        key=f"clr_{main_topic}",
-                        use_container_width=True,
-                    ):
-                        for i in range(len(subtopics)):
-                            st.session_state[f"st_{main_topic}_{i}"] = False
-
-                for i, sub in enumerate(subtopics):
-                    key = f"st_{main_topic}_{i}"
-                    if st.checkbox(sub, key=key, value=st.session_state.get(key, False)):
-                        selected_topics.append(sub)
-
-        st.subheader("Custom Topic")
-        custom_topic = st.text_input(
-            "Add a topic not listed above (optional)",
-            max_chars=200,
-            placeholder="e.g., Quantum Machine Learning, Time-Series Forecasting…",
-        )
-        if custom_topic.strip():
-            selected_topics.append(custom_topic.strip())
-
-    # ── Right: settings & generate ────────────────────────────────────────
-    with right:
-        st.subheader("Exam Settings")
-
-        exam_title = st.text_input(
-            "Exam Title",
-            value="AI & Machine Learning Exam",
-            max_chars=100,
-        )
-
-        num_questions = st.slider(
-            "Number of Questions",
-            min_value=5,
-            max_value=100,
-            value=20,
-            step=5,
-        )
-
-        difficulties = st.multiselect(
-            "Difficulty Level(s)",
-            DIFFICULTY_OPTIONS,
-            default=["Medium"],
-            help="Select multiple to generate a mixed exam.",
-        )
-        if not difficulties:
-            difficulties = ["Medium"]
-            st.caption("Defaulting to Medium.")
-
-        st.divider()
-
-        # Summary
-        st.markdown(
-            f"**{len(selected_topics)}** topic(s) selected &nbsp;·&nbsp; "
-            f"**{num_questions}** questions &nbsp;·&nbsp; "
-            f"{' + '.join(difficulties)}"
-        )
-
-        gen_disabled = not selected_topics or not api_key
-        if not selected_topics:
-            st.warning("Select at least one topic above.", icon="⚠")
-        if not api_key:
-            st.warning("Enter your API key in the sidebar.", icon="🔑")
-
-        generate_btn = st.button(
-            "🚀  Generate Exam",
-            type="primary",
-            use_container_width=True,
-            disabled=gen_disabled,
-        )
-
-    # ── Generation ────────────────────────────────────────────────────────
-    if generate_btn and selected_topics and api_key:
-        progress_bar = st.progress(0)
-        status_area = st.empty()
-
-        def _progress(done: int, total: int, msg: str) -> None:
-            pct = int(done / total * 100) if total else 0
-            progress_bar.progress(pct)
-            status_area.caption(msg)
-
-        try:
-            with st.spinner(f"Generating {num_questions} questions…"):
-                questions = generate_exam(
-                    provider=provider,
-                    model=model,
-                    api_key=api_key,
-                    topics=selected_topics,
-                    num_questions=num_questions,
-                    difficulties=difficulties,
-                    progress_cb=_progress,
-                )
-            progress_bar.progress(100)
-            status_area.empty()
-            st.session_state.exam_questions = questions
-            st.session_state.exam_title = exam_title
-            st.success(f"✅ Generated {len(questions)} questions!")
-        except Exception as exc:
-            progress_bar.empty()
-            status_area.empty()
-            st.error(f"Generation failed: {exc}")
-
-    # ── Display & download ─────────────────────────────────────────────────
+    # ── Display existing exam FIRST ────────────────────────────────────────
     if st.session_state.exam_questions:
         qs = st.session_state.exam_questions
         title = st.session_state.exam_title
         fname = safe_filename(title)
 
-        st.divider()
         st.subheader(f"Preview — {title}")
 
         # Metrics row
@@ -375,6 +252,149 @@ with tab_gen:
                             st.write(f"{letter}) {opt}")
                 if q.get("explanation"):
                     st.info(f"💡 {q['explanation']}")
+
+        st.divider()
+
+    # ── Configuration ──────────────────────────────────────────────────────
+    st.subheader("Generate New Exam" if st.session_state.exam_questions else "Configure Exam")
+
+    left, right = st.columns([3, 2], gap="large")
+
+    # ── Left: topic selection ──────────────────────────────────────────────
+    with left:
+        st.subheader("Topics")
+
+        selected_topics: list[str] = []
+
+        for main_topic, subtopics in TOPICS.items():
+            with st.expander(f"**{main_topic}**", expanded=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button(
+                        "Select All",
+                        key=f"selall_{main_topic}",
+                        use_container_width=True,
+                    ):
+                        for i in range(len(subtopics)):
+                            st.session_state[f"st_{main_topic}_{i}"] = True
+                with c2:
+                    if st.button(
+                        "Clear",
+                        key=f"clr_{main_topic}",
+                        use_container_width=True,
+                    ):
+                        for i in range(len(subtopics)):
+                            st.session_state[f"st_{main_topic}_{i}"] = False
+
+                for i, sub in enumerate(subtopics):
+                    key = f"st_{main_topic}_{i}"
+                    if st.checkbox(sub, key=key, value=st.session_state.get(key, False)):
+                        selected_topics.append(sub)
+
+        st.subheader("Custom Topic")
+        custom_topic = st.text_input(
+            "Add a topic not listed above (optional)",
+            max_chars=200,
+            placeholder="e.g., Quantum Machine Learning, Time-Series Forecasting…",
+        )
+        if custom_topic.strip():
+            selected_topics.append(custom_topic.strip())
+
+    # ── Right: settings ────────────────────────────────────────────────────
+    with right:
+        st.subheader("Exam Settings")
+
+        exam_title = st.text_input(
+            "Exam Title",
+            value="AI & Machine Learning Exam",
+            max_chars=100,
+        )
+
+        num_questions = st.slider(
+            "Number of Questions",
+            min_value=5,
+            max_value=100,
+            value=20,
+            step=5,
+        )
+
+        difficulties = st.multiselect(
+            "Difficulty Level(s)",
+            DIFFICULTY_OPTIONS,
+            default=["Medium"],
+            help="Select multiple to generate a mixed exam.",
+        )
+        if not difficulties:
+            difficulties = ["Medium"]
+            st.caption("Defaulting to Medium.")
+
+    # ── Generate button — full-width below columns ─────────────────────────
+    st.divider()
+
+    summary_col, btn_col = st.columns([3, 1], gap="large")
+    with summary_col:
+        if not selected_topics:
+            st.warning("Select at least one topic above.", icon="⚠")
+        elif not api_key:
+            st.warning("Enter your API key in the sidebar.", icon="🔑")
+        else:
+            st.markdown(
+                f"**{len(selected_topics)}** topic(s) &nbsp;·&nbsp; "
+                f"**{num_questions}** questions &nbsp;·&nbsp; "
+                f"{' + '.join(difficulties)}"
+            )
+    with btn_col:
+        generate_btn = st.button(
+            "🚀  Generate Exam",
+            type="primary",
+            use_container_width=True,
+        )
+
+    # ── Generation ────────────────────────────────────────────────────────
+    if generate_btn:
+        if not selected_topics:
+            st.error("Select at least one topic before generating.", icon="⚠")
+        elif not api_key:
+            st.error("Enter your API key in the sidebar.", icon="🔑")
+        else:
+            # Capture params immediately so a rerun mid-generation can't lose them
+            st.session_state.generate_exam_requested = True
+            _gen_topics = list(selected_topics)
+            _gen_n = num_questions
+            _gen_diff = list(difficulties)
+            _gen_title = exam_title
+
+            progress_bar = st.progress(0)
+            status_area = st.empty()
+
+            def _progress(done: int, total: int, msg: str) -> None:
+                pct = int(done / total * 100) if total else 0
+                progress_bar.progress(pct)
+                status_area.caption(msg)
+
+            try:
+                with st.spinner(f"Generating {_gen_n} questions…"):
+                    questions = generate_exam(
+                        provider=provider,
+                        model=model,
+                        api_key=api_key,
+                        topics=_gen_topics,
+                        num_questions=_gen_n,
+                        difficulties=_gen_diff,
+                        progress_cb=_progress,
+                    )
+                progress_bar.progress(100)
+                status_area.empty()
+                st.session_state.exam_questions = questions
+                st.session_state.exam_title = _gen_title
+                st.session_state.generate_exam_requested = False
+                st.success(f"✅ Generated {len(questions)} questions!")
+                st.rerun()
+            except Exception as exc:
+                progress_bar.empty()
+                status_area.empty()
+                st.session_state.generate_exam_requested = False
+                st.error(f"Generation failed: {exc}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

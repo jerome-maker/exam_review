@@ -3,6 +3,7 @@ Exam generation logic — prompt construction, batched API calls, JSON parsing.
 """
 from __future__ import annotations
 import json
+import random
 import re
 import time
 from typing import Callable
@@ -225,6 +226,12 @@ REQUIREMENTS:
 - Exactly one option is correct; the others are plausible distractors
 - Questions must be academically rigorous and unambiguous
 - IDs run from {start_id} to {start_id + batch_n - 1}
+- Vary which letter (A/B/C/D) holds the correct answer — do NOT default to B
+
+MATHEMATICAL ACCURACY (verify before output):
+- CNN output spatial size: floor((input + 2·padding − filter_size) / stride) + 1
+  Example — 32×32 input, 3×3 filter, stride 1, no padding: (32 − 3)/1 + 1 = 30
+- Double-check every computed numerical value in both the question and all options
 
 OUTPUT FORMAT — return ONLY a valid JSON array:
 [
@@ -304,17 +311,32 @@ def _extract_list(data) -> list[Question]:
 
 
 def _normalize(q: dict) -> dict:
-    """Ensure required fields exist with sensible defaults."""
+    """Ensure required fields exist and randomly shuffle option positions."""
+    letters = ["A", "B", "C", "D"]
+    raw_opts = {
+        k: str(v)
+        for k, v in q.get("options", {}).items()
+        if k in letters
+    }
+    original_correct = str(q.get("correct_answer", "A")).upper()
+
+    # Shuffle option positions to eliminate answer-position bias (e.g., always B)
+    indices = list(range(len(letters)))
+    random.shuffle(indices)
+
+    shuffled_values = [raw_opts.get(letters[i], "") for i in indices]
+    shuffled_opts = {letters[pos]: shuffled_values[pos] for pos in range(len(letters))}
+
+    # Determine which new letter now holds the originally correct answer
+    original_idx = letters.index(original_correct) if original_correct in letters else 0
+    new_correct = letters[indices.index(original_idx)]
+
     return {
         "id": int(q.get("id", 0)),
         "topic": str(q.get("topic", "General")),
         "difficulty": str(q.get("difficulty", "Medium")).capitalize(),
         "question": str(q.get("question", "")),
-        "options": {
-            k: str(v)
-            for k, v in q.get("options", {}).items()
-            if k in ("A", "B", "C", "D")
-        },
-        "correct_answer": str(q.get("correct_answer", "A")).upper(),
+        "options": shuffled_opts,
+        "correct_answer": new_correct,
         "explanation": str(q.get("explanation", "")),
     }
